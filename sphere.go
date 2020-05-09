@@ -13,20 +13,20 @@ type Sphere struct {
 	ReflectionType ReflectionType
 }
 
-func (s Sphere) Intersect(ray Ray) (bool, Hitpoint) {
-	var hitpoint Hitpoint
-
+func (s Sphere) Intersect(ray Ray) (isIntersect bool, hitpoint Hitpoint) {
 	po := s.Position.SubVec(ray.Org)
 	b := po.Dot(ray.Dir)
 	d4 := b*b - po.Dot(po) + s.Radius*s.Radius
 	if d4 < 0.0 {
-		return false, hitpoint
+		isIntersect = false
+		return
 	}
 
 	sqrtD4 := math.Sqrt(d4)
 	t1, t2 := b-sqrtD4, b+sqrtD4
 	if t1 < Eps && t2 < Eps {
-		return false, hitpoint
+		isIntersect = false
+		return
 	} else if t1 > Eps {
 		hitpoint.Distance = t1
 	} else {
@@ -39,5 +39,6 @@ func (s Sphere) Intersect(ray Ray) (bool, Hitpoint) {
 	hitpoint.Color = s.Color
 	hitpoint.ReflectionType = s.ReflectionType
 
-	return true, hitpoint
+	isIntersect = true
+	return
 }
