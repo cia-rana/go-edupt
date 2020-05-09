@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"image/color"
@@ -8,6 +9,8 @@ import (
 	"math/rand"
 	"runtime"
 	"sync"
+
+	"golang.org/x/sync/semaphore"
 )
 
 func render(width, height, samples, superSamples int) error {
@@ -37,34 +40,36 @@ func render(width, height, samples, superSamples int) error {
 
 	log.Println("start")
 	wg := sync.WaitGroup{}
-	jobNum := runtime.NumCPU()
+	smp := semaphore.NewWeighted(int64(runtime.NumCPU()))
 	finishedCounter := 0
-	for job := 0; job < jobNum; job++ {
+	for y := 0; y < height; y++ {
 		wg.Add(1)
-		go func(job int) {
-			for y := job * (height / jobNum); y*jobNum < (job+1)*height; y++ {
-				rnd := rand.New(rand.NewSource(int64(y)))
-				for x := 0; x < width; x++ {
-					accumulatedRadiance := Color{}
-					for sy := 0; sy < superSamples; sy++ {
-						for sx := 0; sx < superSamples; sx++ {
-							for s := 0; s < samples; s++ {
-								screenPosition := screenCenter.
-									AddVec(screenX.Mul((rate*(float64(sx)+0.5)+float64(x))*invWidth - 0.5)).
-									AddVec(screenY.Mul((rate*(float64(sy)+0.5)+float64(y))*invHeight - 0.5))
-								dir := screenPosition.SubVec(cameraPos).Normalize()
-								accumulatedRadiance = accumulatedRadiance.AddColor(radiance(Ray{cameraPos, dir}, rnd))
-							}
+		smp.Acquire(context.Background(), 1)
+
+		go func(y int) {
+			defer wg.Done()
+			defer smp.Release(1)
+
+			rnd := rand.New(rand.NewSource(int64(y)))
+			for x := 0; x < width; x++ {
+				accumulatedRadiance := Color{}
+				for sy := 0; sy < superSamples; sy++ {
+					for sx := 0; sx < superSamples; sx++ {
+						for s := 0; s < samples; s++ {
+							screenPosition := screenCenter.
+								AddVec(screenX.Mul((rate*(float64(sx)+0.5)+float64(x))*invWidth - 0.5)).
+								AddVec(screenY.Mul((rate*(float64(sy)+0.5)+float64(y))*invHeight - 0.5))
+							dir := screenPosition.SubVec(cameraPos).Normalize()
+							accumulatedRadiance = accumulatedRadiance.AddColor(radiance(Ray{cameraPos, dir}, rnd))
 						}
 					}
-					img[(height-y-1)*width+x] = accumulatedRadiance.Mul(invSamples)
 				}
-
-				finishedCounter++
-				fmt.Printf("\r%d%%", 100*finishedCounter/height)
+				img[(height-y-1)*width+x] = accumulatedRadiance.Mul(invSamples)
 			}
-			wg.Done()
-		}(job)
+
+			finishedCounter++
+			fmt.Printf("\r%.2f%%", 100.0*float64(finishedCounter)/float64(height))
+		}(y)
 	}
 	wg.Wait()
 	fmt.Println()
